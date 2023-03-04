@@ -1,0 +1,60 @@
+import pandas as pd
+import numpy as np
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
+from keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# Load the dataset
+df = pd.read_csv('/content/output.csv')
+
+# Split the data into input and output
+X = df['Token']
+y = df['Image URL'].astype(str)
+
+# Convert the input and output data into sequences of integers
+tokenizer = Tokenizer()
+tokenizer.fit_on_texts(X)
+X_seq = tokenizer.texts_to_sequences(X)
+max_seq_length = max(len(seq) for seq in X_seq)
+X_seq = pad_sequences(X_seq, maxlen=max_seq_length)
+
+# Add an extra dimension to the input data
+X_seq = np.expand_dims(X_seq, axis=2)
+
+# Split the data into training and testing sets
+split_ratio = 0.8
+split_index = int(split_ratio * len(X_seq))
+X_train, X_test = X_seq[:split_index], X_seq[split_index:]
+y_train, y_test = y[:split_index], y[split_index:]
+
+# Build the LSTM model
+model = Sequential()
+model.add(LSTM(128, input_shape=(max_seq_length, 1), activation='relu', return_sequences=False))
+model.add(Dense(128, activation='relu'))
+model.add(Dense(len(tokenizer.word_index)+1, activation='softmax'))
+model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
+
+# Convert target variable to categorical
+y_train_seq = tokenizer.texts_to_sequences(y_train)
+y_train_cat = tokenizer.sequences_to_matrix(y_train_seq, mode='binary')
+y_test_seq = tokenizer.texts_to_sequences(y_test)
+y_test_cat = tokenizer.sequences_to_matrix(y_test_seq, mode='binary')
+
+# Train the model
+model.fit(X_train, y_train_cat, validation_data=(X_test, y_test_cat), epochs=15, batch_size=32)
+
+# Evaluate the model
+loss, accuracy = model.evaluate(X_test, y_test_cat)
+print('Loss:', loss)
+print('Accuracy:', accuracy)
+
+# Use the model to predict image URLs from new HTML content
+new_html = ''
+new_seq = tokenizer.texts_to_sequences(new_html)
+new_seq = pad_sequences(new_seq, maxlen=max_seq_length)
+new_seq = np.expand_dims(new_seq, axis=2)
+prediction = model.predict(new_seq)
+predicted_index = np.argmax(prediction, axis=1)
+predicted_url = tokenizer.index_word[predicted_index[0]]
+print('Predicted URL:', predicted_url)
